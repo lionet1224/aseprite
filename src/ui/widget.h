@@ -1,5 +1,5 @@
 // Aseprite UI Library
-// Copyright (C) 2018-2023  Igara Studio S.A.
+// Copyright (C) 2018-2024  Igara Studio S.A.
 // Copyright (C) 2001-2018  David Capello
 //
 // This file is released under the terms of the MIT license.
@@ -349,12 +349,29 @@ namespace ui {
     void captureMouse();
     void releaseMouse();
 
+    // True when the widget has the keyboard focus (only widgets with
+    // FOCUS_STOP flag will receive the HAS_FOCUS flag/receive the
+    // focus when the user press the tab key to navigate widgets).
     bool hasFocus() const { return hasFlags(HAS_FOCUS); }
-    bool hasMouse() const { return hasFlags(HAS_MOUSE); }
-    bool hasCapture() const { return hasFlags(HAS_CAPTURE); }
 
-    // Checking if the mouse is currently above the widget.
-    bool hasMouseOver() const;
+    // True when the widget has the mouse above. If the mouse leaves
+    // the widget, the widget will lose the HAS_MOUSE flag. If some
+    // widget captures the mouse, no other widget will have this flag,
+    // so in this case there are just two options:
+    //
+    // 1) The widget with the capture (hasCapture()) will has the
+    //    mouse flag too.
+    // 2) Or no other widget will have the mouse flag until the widget
+    //    releases the capture (releaseCapture())
+    bool hasMouse() const { return hasFlags(HAS_MOUSE); }
+
+    // True when the widget has captured the mouse, e.g. generally
+    // when the user press a mouse button above a clickeable widget
+    // (e.g. ui::Button), the widget will capture the mouse
+    // temporarily until the mouse button is released. If a widget
+    // captures the mouse, it will receive all mouse events until it
+    // release (even if the mouse moves outside the widget).
+    bool hasCapture() const { return hasFlags(HAS_CAPTURE); }
 
     // Returns the mouse position relative to the top-left corner of
     // the ui::Display's client area/content rect.
@@ -451,8 +468,8 @@ namespace ui {
     // kMnemonicModifiersMask bit is zero, it means that the mnemonic
     // can be used without Alt or Command key modifiers (useful for
     // buttons in ui::Alert).
-    static constexpr int kMnemonicCharMask = 0x7f;
-    static constexpr int kMnemonicModifiersMask = 0x80;
+    static constexpr int kMnemonicCharMask = 0xffff;
+    static constexpr int kMnemonicModifiersMask = 0x10000;
     int m_mnemonic;
 
     // Widget size limits

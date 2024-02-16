@@ -53,10 +53,12 @@
 #include "app/util/layer_utils.h"
 #include "app/util/new_image_from_mask.h"
 #include "app/util/readable_time.h"
+#include "app/util/tile_flags_utils.h"
 #include "base/pi.h"
 #include "base/vector2d.h"
 #include "doc/grid.h"
 #include "doc/layer.h"
+#include "doc/layer_tilemap.h"
 #include "doc/mask.h"
 #include "doc/slice.h"
 #include "doc/sprite.h"
@@ -606,7 +608,12 @@ bool StandbyState::onUpdateStatusBar(Editor* editor)
             site.layer()->isTilemap() &&
             site.image()) {
           if (site.image()->bounds().contains(pt)) {
-            buf += fmt::format(" [{}]", site.image()->getPixel(pt.x, pt.y));
+            doc::tile_t t = site.image()->getPixel(pt.x, pt.y);
+            doc::tile_index ti = doc::tile_geti(t);
+            doc::tile_flags tf = doc::tile_getf(t);
+            std::string str;
+            build_tile_flags_string(tf, str);
+            buf += fmt::format(" [{}{}]", ti, str);
           }
         }
       }
@@ -642,19 +649,6 @@ DrawingState* StandbyState::startDrawingState(
   const DrawingType drawingType,
   const tools::Pointer& pointer)
 {
-  if (editor->layer()->isTilemap() &&
-      editor->sprite()->hasTileManagementPlugin() &&
-      !editor->layer()->cel(editor->frame())) {
-    // Trigger event so the plugin can create a cel on-the-fly
-    App::instance()->BeforePaintEmptyTilemap();
-
-    if (!editor->layer() ||
-        !editor->layer()->cel(editor->frame())) {
-      return nullptr;
-    }
-    // In other case, it looks like PaintEmptyTilemap event created
-    // the cel...
-  }
   // We need to clear and redraw the brush boundaries after the
   // first mouse pressed/point shape if drawn. This is to avoid
   // graphical glitches (invalid areas in the ToolLoop's src/dst

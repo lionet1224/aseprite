@@ -144,7 +144,7 @@ void Widget::setTextf(const char *format, ...)
     va_list ap;
     va_start(ap, format);
     char buf[4096];
-    vsprintf(buf, format, ap);
+    std::vsnprintf(buf, sizeof(buf), format, ap);
     va_end(ap);
 
     setText(buf);
@@ -1496,11 +1496,6 @@ bool Widget::offerCapture(ui::MouseMessage* mouseMsg, int widget_type)
   return false;
 }
 
-bool Widget::hasMouseOver() const
-{
-  return (this == pickFromScreenPos(get_mouse_position()));
-}
-
 gfx::Point Widget::mousePosInDisplay() const
 {
   return display()->nativeWindow()->pointFromScreen(get_mouse_position());
@@ -1696,6 +1691,8 @@ void Widget::onBroadcastMouseMessage(const gfx::Point& screenPos,
 
 void Widget::onInitTheme(InitThemeEvent& ev)
 {
+  // Reset cached font
+  m_font = nullptr;
   // Create a copy of the children list and iterate it, just in case a
   // initTheme() modifies this list (e.g. this can happen in some
   // strange cases with viewports, where scrollbars are added/removed

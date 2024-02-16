@@ -9,12 +9,13 @@
 #define RENDER_RENDER_H_INCLUDED
 #pragma once
 
-#include "doc/doc.h"
 #include "doc/anidir.h"
 #include "doc/blend_mode.h"
 #include "doc/color.h"
+#include "doc/doc.h"
 #include "doc/frame.h"
 #include "doc/pixel_format.h"
+#include "doc/tile.h"
 #include "gfx/clip.h"
 #include "gfx/point.h"
 #include "gfx/size.h"
@@ -45,7 +46,8 @@ namespace render {
     const BlendMode blendMode,
     const double sx,
     const double sy,
-    const bool newBlend);
+    const bool newBlend,
+    const tile_flags tileFlags);
 
   class Render {
     enum Flags {
@@ -187,14 +189,16 @@ namespace render {
       const Palette* pal,
       const gfx::RectF& celBounds,
       const gfx::Clip& area,
-      const CompositeImageFunc compositeImage,
+      CompositeImageFunc compositeImage,
       const int opacity,
-      const BlendMode blendMode);
+      const BlendMode blendMode,
+      const tile_flags tileFlags = notile);
 
     CompositeImageFunc getImageComposition(
       const PixelFormat dstFormat,
       const PixelFormat srcFormat,
-      const Layer* layer);
+      const Layer* layer,
+      const tile_flags tileFlags = notile);
 
     bool checkIfWeShouldUsePreview(const Cel* cel) const;
 

@@ -180,8 +180,11 @@ bool WebPFormat::onLoad(FileOp* fop)
 
     Cel* cel = layer->cel(f);
     if (cel) {
-      memcpy(cel->image()->getPixelAddress(0, 0),
-             frame_rgba, h*w*sizeof(uint32_t));
+      const uint32_t* src = (const uint32_t*)frame_rgba;
+      for (int y=0; y<h; ++y, src+=w) {
+        memcpy(cel->image()->getPixelAddress(0, y),
+               src, w*sizeof(uint32_t));
+      }
 
       if (!has_alpha) {
         const uint32_t* src = (const uint32_t*)frame_rgba;
@@ -257,7 +260,7 @@ bool WebPFormat::onSave(FileOp* fop)
   FileHandle handle(open_file_with_exception_sync_on_close(fop->filename(), "wb"));
   FILE* fp = handle.get();
 
-  const FileAbstractImage* sprite = fop->abstractImage();
+  const FileAbstractImage* sprite = fop->abstractImageToSave();
   const int w = sprite->width();
   const int h = sprite->height();
 
@@ -310,16 +313,16 @@ bool WebPFormat::onSave(FileOp* fop)
   pic.height = h;
   pic.use_argb = true;
   pic.argb = (uint32_t*)image->getPixelAddress(0, 0);
-  pic.argb_stride = w;
+  pic.argb_stride = image->rowPixels(); // Stride in pixels (not bytes)
   pic.user_data = &wd;
   pic.progress_hook = progress_report;
 
   WebPAnimEncoder* enc = WebPAnimEncoderNew(w, h, &enc_options);
   int timestamp_ms = 0;
-  for (frame_t frame : fop->roi().selectedFrames()) {
+  for (frame_t frame : fop->roi().framesSequence()) {
     // Render the frame in the bitmap
     clear_image(image.get(), image->maskColor());
-    sprite->renderFrame(frame, image.get());
+    sprite->renderFrame(frame, fop->roi().frameBounds(frame), image.get());
 
     // Switch R <-> B channels because WebPAnimEncoderAssemble()
     // expects MODE_BGRA pictures.

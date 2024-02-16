@@ -54,6 +54,10 @@ namespace doc {
   class WithUserData;
 }
 
+namespace ui {
+  class Window;
+}
+
 namespace app {
 
   class Editor;
@@ -100,6 +104,8 @@ namespace app {
                   const Params& params = Params());
     bool evalUserFile(const std::string& filename,
                       const Params& params = Params());
+
+    void handleException(const std::exception& ex);
 
     void consolePrint(const char* text) {
       onConsolePrint(text);
@@ -172,10 +178,13 @@ namespace app {
   void push_tile(lua_State* L, const doc::Tileset* tileset, doc::tile_index ti);
   void push_tile_properties(lua_State* L, const doc::Tileset* tileset, doc::tile_index ti, const std::string& extID);
   void push_tileset(lua_State* L, const doc::Tileset* tileset);
-  void push_tileset_image(lua_State* L, doc::Tileset* tileset, doc::Image* image);
+  void push_tileset_image(lua_State* L, doc::Tileset* tileset, doc::tile_index ti);
   void push_tilesets(lua_State* L, doc::Tilesets* tilesets);
   void push_tool(lua_State* L, app::tools::Tool* tool);
   void push_version(lua_State* L, const base::Version& ver);
+#ifdef ENABLE_UI
+  void push_window_events(lua_State* L, ui::Window* window);
+#endif
 
   gfx::Point convert_args_into_point(lua_State* L, int index);
   gfx::Rect convert_args_into_rect(lua_State* L, int index);
@@ -188,6 +197,7 @@ namespace app {
   doc::Image* may_get_image_from_arg(lua_State* L, int index);
   doc::Image* get_image_from_arg(lua_State* L, int index);
   doc::Cel* get_image_cel_from_arg(lua_State* L, int index);
+  doc::Tileset* get_image_tileset_from_arg(lua_State* L, int index);
   doc::frame_t get_frame_number_from_arg(lua_State* L, int index);
   const doc::Mask* get_mask_from_arg(lua_State* L, int index);
   app::tools::Tool* get_tool_from_arg(lua_State* L, int index);

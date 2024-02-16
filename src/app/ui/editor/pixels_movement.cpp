@@ -119,7 +119,8 @@ PixelsMovement::PixelsMovement(
   : m_reader(context)
   , m_site(site)
   , m_document(site.document())
-  , m_tx(context, operationName)
+  , m_tx(Tx::DontLockDoc, context,
+         context->activeDocument(), operationName)
   , m_isDragging(false)
   , m_adjustPivot(false)
   , m_handle(NoHandle)
@@ -375,11 +376,14 @@ void PixelsMovement::moveImage(const gfx::PointF& pos, MoveModifier moveModifier
   switch (m_handle) {
 
     case MovePixelsHandle: {
-      double dx = (pos.x - m_catchPos.x);
-      double dy = (pos.y - m_catchPos.y);
+      double dx, dy;
       if ((moveModifier & FineControl) == 0) {
-        if (dx >= 0.0) { dx = std::floor(dx); } else { dx = std::ceil(dx); }
-        if (dy >= 0.0) { dy = std::floor(dy); } else { dy = std::ceil(dy); }
+        dx = (std::floor(pos.x) - std::floor(m_catchPos.x));
+        dy = (std::floor(pos.y) - std::floor(m_catchPos.y));
+      }
+      else {
+        dx = (pos.x - m_catchPos.x);
+        dy = (pos.y - m_catchPos.y);
       }
 
       if ((moveModifier & LockAxisMovement) == LockAxisMovement) {

@@ -9,6 +9,8 @@
 #define DIO_ASEPRITE_COMMON_H_INCLUDED
 #pragma once
 
+#include "base/ints.h"
+
 #include <map>
 #include <string>
 
@@ -62,6 +64,9 @@
 #define ASE_TILESET_FLAG_EXTERNAL_FILE      1
 #define ASE_TILESET_FLAG_EMBEDDED           2
 #define ASE_TILESET_FLAG_ZERO_IS_NOTILE     4
+#define ASE_TILESET_FLAG_MATCH_XFLIP        8
+#define ASE_TILESET_FLAG_MATCH_YFLIP        16
+#define ASE_TILESET_FLAG_MATCH_DFLIP        32
 
 #define ASE_EXTERNAL_FILE_PALETTE           0
 #define ASE_EXTERNAL_FILE_TILESET           1

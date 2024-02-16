@@ -13,6 +13,7 @@
 #include "app/commands/commands.h"
 #include "app/commands/params.h"
 #include "app/context.h"
+#include "app/context_access.h"
 #include "app/doc.h"
 #include "app/doc_access.h"
 #include "app/i18n/strings.h"
@@ -37,6 +38,7 @@
 #include "app/ui/editor/editor.h"
 #include "app/ui/editor/tool_loop_impl.h"
 #include "app/ui/timeline/timeline.h"
+#include "app/ui/main_window.h"
 #include "app/ui_context.h"
 #include "base/fs.h"
 #include "base/replace_string.h"
@@ -151,15 +153,27 @@ int App_transaction(lua_State* L)
   }
 
   if (lua_isfunction(L, index)) {
-    Tx tx(label); // Create a new transaction so it exists in the whole
-                  // duration of the argument function call.
+    app::Context* ctx = App::instance()->context();
+    if (!ctx)
+      return luaL_error(L, "no context");
 
-    lua_pushvalue(L, -1);
-    if (lua_pcall(L, 0, LUA_MULTRET, 0) == LUA_OK)
-      tx.commit();
-    else
-      return lua_error(L); // pcall already put an error object on the stack
-    nresults = lua_gettop(L) - top;
+    try {
+      // We lock the document in the whole transaction because the
+      // RWLock now is re-entrant and we are able to call commands
+      // inside the app.transaction() (creating inner ContextWriters).
+      ContextWriter writer(ctx);
+      Tx tx(writer, label);
+
+      lua_pushvalue(L, -1);
+      if (lua_pcall(L, 0, LUA_MULTRET, 0) == LUA_OK)
+        tx.commit();
+      else
+        return lua_error(L); // pcall already put an error object on the stack
+      nresults = lua_gettop(L) - top;
+    }
+    catch (const LockedDocException& ex) {
+      return luaL_error(L, "cannot lock document for transaction\n%s", ex.what());
+    }
   }
   return nresults;
 }
@@ -700,6 +714,21 @@ int App_get_defaultPalette(lua_State* L)
   return 1;
 }
 
+int App_get_window(lua_State* L)
+{
+#if ENABLE_UI
+  App* app = App::instance();
+  if (app && app->mainWindow()) {
+    push_ptr(L, (ui::Window*)app->mainWindow());
+  }
+  else
+#endif
+  {
+    lua_pushnil(L);
+  }
+  return 1;
+}
+
 int App_set_sprite(lua_State* L)
 {
   auto sprite = may_get_docobj<Sprite>(L, 2);
@@ -814,6 +843,7 @@ const Property App_properties[] = {
   { "range",          App_get_range,          nullptr },
   { "isUIAvailable",  App_get_isUIAvailable,  nullptr },
   { "defaultPalette", App_get_defaultPalette, App_set_defaultPalette },
+  { "window",         App_get_window,         nullptr },
   { "events",         App_get_events,         nullptr },
   { "theme",          App_get_theme,          nullptr },
   { "uiScale",        App_get_uiScale,        nullptr },

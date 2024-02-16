@@ -90,15 +90,13 @@ namespace app {
       kShowDecorators = 16,
       kShowSymmetryLine = 32,
       kShowSlices = 64,
-      kUseNonactiveLayersOpacityWhenEnabled = 128,
       kDefaultEditorFlags = (kShowGrid |
                              kShowMask |
                              kShowOnionskin |
                              kShowOutside |
                              kShowDecorators |
                              kShowSymmetryLine |
-                             kShowSlices |
-                             kUseNonactiveLayersOpacityWhenEnabled)
+                             kShowSlices)
     };
 
     enum class ZoomBehavior {
@@ -324,6 +322,11 @@ namespace app {
     // Properties to show information in the status bar
     bool showAutoCelGuides() const { return m_showAutoCelGuides; }
 
+    // Used in case an unhandled exception was caught when processing
+    // an Editor or EditorState event.
+    void showUnhandledException(const std::exception& ex,
+                                const ui::Message* msg);
+
     static void registerCommands();
 
   protected:
@@ -397,6 +400,8 @@ namespace app {
     void invalidateCanvas();
     void invalidateIfActive();
     void updateAutoCelGuides(ui::Message* msg);
+
+    int otherLayersOpacity() const;
 
     // Stack of states. The top element in the stack is the current state (m_state).
     EditorStatesHistory m_statesHistory;

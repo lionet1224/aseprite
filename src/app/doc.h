@@ -32,6 +32,7 @@
 namespace doc {
   class Cel;
   class Layer;
+  class LayerTilemap;
   class Mask;
   class Sprite;
   class Tileset;
@@ -67,6 +68,8 @@ namespace app {
       kReadOnly         = 16,// This document is read-only
     };
   public:
+    using LockResult = base::RWLock::LockResult;
+
     Doc(Sprite* sprite);
     ~Doc();
 
@@ -75,11 +78,11 @@ namespace app {
 
     // Lock/unlock API (RWLock wrapper)
     bool canWriteLockFromRead() const;
-    bool readLock(int timeout);
-    bool writeLock(int timeout);
-    bool upgradeToWrite(int timeout);
-    void downgradeToRead();
-    void unlock();
+    LockResult readLock(int timeout);
+    LockResult writeLock(int timeout);
+    LockResult upgradeToWrite(int timeout);
+    void downgradeToRead(LockResult lockResult);
+    void unlock(LockResult lockResult);
 
     bool weakLock(std::atomic<base::RWLock::WeakLock>* weak_lock_flag);
     void weakUnlock();
@@ -119,6 +122,7 @@ namespace app {
     void notifySelectionBoundariesChanged();
     void notifyTilesetChanged(Tileset* tileset);
     void notifyLayerGroupCollapseChange(Layer* layer);
+    void notifyAfterAddTile(LayerTilemap* layer, frame_t frame, tile_index ti);
 
     //////////////////////////////////////////////////////////////////////
     // File related properties

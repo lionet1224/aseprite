@@ -184,6 +184,7 @@ ColorBar::ColorBar(int align, TooltipManager* tooltipManager)
 {
   m_instance = this;
 
+  auto& pref = Preferences::instance();
   auto theme = SkinTheme::get(this);
 
   auto item = m_editPal.addItem("");
@@ -215,6 +216,8 @@ ColorBar::ColorBar(int align, TooltipManager* tooltipManager)
   m_tilesetModeButtons.addItem(theme->parts.tilesManual(), "pal_button");
   m_tilesetModeButtons.addItem(theme->parts.tilesAuto(), "pal_button");
   m_tilesetModeButtons.addItem(theme->parts.tilesStack(), "pal_button");
+
+  m_tilesetMode = pref.colorBar.defaultTilesetMode();
   setTilesetMode(m_tilesetMode);
 
   m_paletteView.setColumns(8);
@@ -242,8 +245,7 @@ ColorBar::ColorBar(int align, TooltipManager* tooltipManager)
   m_splitter.addChild(&m_palettePlaceholder);
   m_splitter.addChild(&m_selectorPlaceholder);
 
-  setColorSelector(
-    Preferences::instance().colorBar.selector());
+  setColorSelector(pref.colorBar.selector());
 
   m_tilesHBox.addChild(&m_tilesButton);
   m_tilesHBox.addChild(&m_tilesetModeButtons);
@@ -304,6 +306,7 @@ ColorBar::ColorBar(int align, TooltipManager* tooltipManager)
   m_fgTile.Change.connect(&ColorBar::onFgTileButtonChange, this);
   m_bgTile.Change.connect(&ColorBar::onBgTileButtonChange, this);
   m_tilesetModeButtons.ItemChange.connect([this]{ onTilesetModeButtonClick(); });
+  m_tilesetModeButtons.RightClick.connect([this]{ onTilesetModeButtonRightClick(); });
 
   InitTheme.connect(
     [this, fgBox, bgBox]{
@@ -355,13 +358,13 @@ ColorBar::ColorBar(int align, TooltipManager* tooltipManager)
   initTheme();
 
   // Set background color reading its value from the configuration.
-  setBgColor(Preferences::instance().colorBar.bgColor());
+  setBgColor(pref.colorBar.bgColor());
 
   // Clear the selection of the BG color in the palette.
   m_paletteView.deselect();
 
   // Set foreground color reading its value from the configuration.
-  setFgColor(Preferences::instance().colorBar.fgColor());
+  setFgColor(pref.colorBar.fgColor());
 
   // Tooltips
   setupTooltips(tooltipManager);
@@ -371,11 +374,11 @@ ColorBar::ColorBar(int align, TooltipManager* tooltipManager)
   UIContext::instance()->add_observer(this);
   m_beforeCmdConn = UIContext::instance()->BeforeCommandExecution.connect(&ColorBar::onBeforeExecuteCommand, this);
   m_afterCmdConn = UIContext::instance()->AfterCommandExecution.connect(&ColorBar::onAfterExecuteCommand, this);
-  m_fgConn = Preferences::instance().colorBar.fgColor.AfterChange.connect([this]{ onFgColorChangeFromPreferences(); });
-  m_bgConn = Preferences::instance().colorBar.bgColor.AfterChange.connect([this]{ onBgColorChangeFromPreferences(); });
-  m_fgTileConn = Preferences::instance().colorBar.fgTile.AfterChange.connect([this]{ onFgTileChangeFromPreferences(); });
-  m_bgTileConn = Preferences::instance().colorBar.bgTile.AfterChange.connect([this]{ onBgTileChangeFromPreferences(); });
-  m_sepConn = Preferences::instance().colorBar.entriesSeparator.AfterChange.connect([this]{ invalidate(); });
+  m_fgConn = pref.colorBar.fgColor.AfterChange.connect([this]{ onFgColorChangeFromPreferences(); });
+  m_bgConn = pref.colorBar.bgColor.AfterChange.connect([this]{ onBgColorChangeFromPreferences(); });
+  m_fgTileConn = pref.colorBar.fgTile.AfterChange.connect([this]{ onFgTileChangeFromPreferences(); });
+  m_bgTileConn = pref.colorBar.bgTile.AfterChange.connect([this]{ onBgTileChangeFromPreferences(); });
+  m_sepConn = pref.colorBar.entriesSeparator.AfterChange.connect([this]{ invalidate(); });
   m_paletteView.FocusOrClick.connect(&ColorBar::onFocusPaletteView, this);
   m_tilesView.FocusOrClick.connect(&ColorBar::onFocusTilesView, this);
   m_appPalChangeConn = App::instance()->PaletteChange.connect(&ColorBar::onAppPaletteChange, this);
@@ -835,6 +838,25 @@ void ColorBar::onTilesetModeButtonClick()
   setTilesetMode(static_cast<TilesetMode>(item));
 }
 
+void ColorBar::onTilesetModeButtonRightClick()
+{
+  int item = m_tilesetModeButtons.selectedItem();
+  gfx::Rect bounds = m_tilesetModeButtons.getItem(item)->bounds();
+
+  Menu menu;
+  MenuItem setAsDefault(Strings::color_bar_set_as_default());
+
+  auto& pref = Preferences::instance();
+  setAsDefault.setSelected(item == int(pref.colorBar.defaultTilesetMode()));
+  menu.addChild(&setAsDefault);
+
+  setAsDefault.Click.connect([&pref, item]{
+    pref.colorBar.defaultTilesetMode((TilesetMode)item);
+  });
+
+  menu.showPopup(gfx::Point(bounds.x, bounds.y2()), display());
+}
+
 void ColorBar::onRemapPalButtonClick()
 {
   ASSERT(m_oldPalette);
@@ -870,7 +892,7 @@ void ColorBar::onRemapPalButtonClick()
     if (sprite) {
       ASSERT(sprite->pixelFormat() == IMAGE_INDEXED);
 
-      Tx tx(writer.context(), "Remap Colors", ModifyDocument);
+      Tx tx(writer, "Remap Colors", ModifyDocument);
       bool remapPixels = true;
 
       std::vector<ImageRef> images;
@@ -943,9 +965,11 @@ void ColorBar::onRemapTilesButtonClick()
 
     if (n > 0) {
       for (const ImageRef& tilemap : tilemaps) {
-        for (const doc::tile_t t : LockImageBits<TilemapTraits>(tilemap.get()))
-          if (t != doc::notile)
-            usedTiles[doc::tile_geti(t)] = true;
+        for (const doc::tile_t t : LockImageBits<TilemapTraits>(tilemap.get())) {
+          const doc::tile_index ti = doc::tile_geti(t);
+          if (ti > 0 && ti < n)
+            usedTiles[ti] = true;
+        }
       }
     }
 
@@ -979,7 +1003,7 @@ void ColorBar::onRemapTilesButtonClick()
       return;
     }
 
-    Tx tx(writer.context(), Strings::color_bar_remap_tiles(), ModifyDocument);
+    Tx tx(writer, Strings::color_bar_remap_tiles(), ModifyDocument);
     if (!existMapToEmpty &&
         remap.isInvertible(usedTiles)) {
       tx(new cmd::RemapTilemaps(tileset, remap));
@@ -1066,7 +1090,7 @@ void ColorBar::setPalette(const doc::Palette* newPalette, const std::string& act
     frame_t frame = writer.frame();
     if (sprite &&
         newPalette->countDiff(sprite->palette(frame), nullptr, nullptr)) {
-      Tx tx(writer.context(), actionText, ModifyDocument);
+      Tx tx(writer, actionText, ModifyDocument);
       tx(new cmd::SetPalette(sprite, frame, newPalette));
       tx.commit();
     }
@@ -1086,7 +1110,7 @@ void ColorBar::setTransparentIndex(int index)
         sprite->pixelFormat() == IMAGE_INDEXED &&
         int(sprite->transparentColor()) != index) {
       // TODO merge this code with SpritePropertiesCommand
-      Tx tx(writer.context(), "Set Transparent Color");
+      Tx tx(writer, "Set Transparent Color");
       DocApi api = writer.document()->getApi(tx);
       api.setSpriteTransparentColor(sprite, index);
       tx.commit();
@@ -1185,7 +1209,7 @@ void ColorBar::onTilesViewClearTiles(const doc::PalettePicks& _picks)
     if (sprite) {
       auto tileset = m_tilesView.tileset();
 
-      Tx tx(writer.context(), "Clear Tiles", ModifyDocument);
+      Tx tx(writer, "Clear Tiles", ModifyDocument);
       for (int ti=int(picks.size())-1; ti>=0; --ti) {
         if (picks[ti])
           tx(new cmd::RemoveTile(tileset, ti));
@@ -1216,7 +1240,7 @@ void ColorBar::onTilesViewResize(const int newSize)
     if (sprite) {
       auto tileset = m_tilesView.tileset();
 
-      Tx tx(writer.context(), Strings::color_bar_resize_tiles(), ModifyDocument);
+      Tx tx(writer, Strings::color_bar_resize_tiles(), ModifyDocument);
       if (tileset->size() < newSize) {
         for (doc::tile_index ti=tileset->size(); ti<newSize; ++ti) {
           ImageRef img = tileset->makeEmptyTile();
@@ -1257,7 +1281,7 @@ void ColorBar::onTilesViewDragAndDrop(doc::Tileset* tileset,
     Context* ctx = UIContext::instance();
     InlineCommandExecution inlineCmd(ctx);
     ContextWriter writer(ctx, 500);
-    Tx tx(writer.context(), Strings::color_bar_drag_and_drop_tiles(), ModifyDocument);
+    Tx tx(writer, Strings::color_bar_drag_and_drop_tiles(), ModifyDocument);
     if (isCopy)
       copy_tiles_in_tileset(tx, tileset, picks, currentEntry, beforeIndex);
     else
@@ -1856,7 +1880,7 @@ void ColorBar::updateCurrentSpritePalette(const char* operationName)
           cmd.release()->execute(UIContext::instance());
         }
         else {
-          Tx tx(writer.context(), operationName, ModifyDocument);
+          Tx tx(writer, operationName, ModifyDocument);
           // If tx() fails it will delete the cmd anyway, so we can
           // release the unique pointer here.
           tx(cmd.release());

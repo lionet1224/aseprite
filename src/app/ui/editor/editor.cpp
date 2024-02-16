@@ -54,6 +54,7 @@
 #include "app/ui/toolbar.h"
 #include "app/ui_context.h"
 #include "app/util/layer_utils.h"
+#include "app/util/tile_flags_utils.h"
 #include "base/chrono.h"
 #include "base/convert_to.h"
 #include "doc/doc.h"
@@ -383,7 +384,7 @@ void Editor::setLayer(const Layer* layer)
         // If the user want to see the active layer edges...
         m_docPref.show.layerEdges() ||
         // If there is a different opacity for nonactive-layers
-        Preferences::instance().experimental.nonactiveLayersOpacity() < 255 ||
+        otherLayersOpacity() < 255 ||
         // If the automatic cel guides are visible...
         m_showGuidesThisCel ||
         // If grid settings changed
@@ -672,10 +673,7 @@ void Editor::drawOneSpriteUnclippedRect(ui::Graphics* g, const gfx::Rect& sprite
     m_renderEngine->setNewBlendMethod(pref.experimental.newBlend());
     m_renderEngine->setRefLayersVisiblity(true);
     m_renderEngine->setSelectedLayer(m_layer);
-    if (m_flags & Editor::kUseNonactiveLayersOpacityWhenEnabled)
-      m_renderEngine->setNonactiveLayersOpacity(pref.experimental.nonactiveLayersOpacity());
-    else
-      m_renderEngine->setNonactiveLayersOpacity(255);
+    m_renderEngine->setNonactiveLayersOpacity(otherLayersOpacity());
     m_renderEngine->setupBackground(m_document, IMAGE_RGB);
     m_renderEngine->disableOnionskin();
 
@@ -1199,7 +1197,8 @@ void Editor::drawTileNumbers(ui::Graphics* g, const Cel* cel)
 
   const doc::Grid grid = getSite().grid();
   const gfx::Size tileSize = editorToScreen(grid.tileToCanvas(gfx::Rect(0, 0, 1, 1))).size();
-  if (tileSize.h > g->font()->height()) {
+  const int th = g->font()->height();
+  if (tileSize.h > th) {
     const gfx::Point offset =
       gfx::Point(tileSize.w/2,
                  tileSize.h/2 - g->font()->height()/2)
@@ -1214,13 +1213,28 @@ void Editor::drawTileNumbers(ui::Graphics* g, const Cel* cel)
       for (int x=0; x<image->width(); ++x) {
         doc::tile_t t = image->getPixel(x, y);
         if (t != doc::notile) {
+          const doc::tile_index ti = doc::tile_geti(t);
+          const doc::tile_index tf = doc::tile_getf(t);
+
           gfx::Point pt = editorToScreen(grid.tileToCanvas(gfx::Point(x, y)));
           pt -= bounds().origin();
           pt += offset;
 
-          text = fmt::format("{}", int(t & doc::tile_i_mask) + ti_offset);
-          pt.x -= g->measureUIText(text).w/2;
-          g->drawText(text, fgColor, color, pt);
+          text = fmt::format("{}", ti + ti_offset);
+
+          gfx::Point pt2(pt);
+          pt2.x -= g->measureUIText(text).w/2;
+          g->drawText(text, fgColor, color, pt2);
+
+          if (tf && tileSize.h > 2*th) {
+            text.clear();
+            build_tile_flags_string(tf, text);
+
+            const gfx::Size tsize = g->measureUIText(text);
+            pt.x -= tsize.w/2;
+            pt.y += tsize.h;
+            g->drawText(text, fgColor, color, pt);
+          }
         }
       }
     }
@@ -1883,6 +1897,21 @@ void Editor::cancelSelections()
   clearSlicesSelection();
 }
 
+void Editor::showUnhandledException(const std::exception& ex,
+                                    const ui::Message* msg)
+{
+  EditorState* state = getState().get();
+
+  Console console;
+  Console::showException(ex);
+  console.printf(
+    "\nInternal details:\n"
+    "- Message type: %d\n"
+    "- Editor state: %s\n",
+    (msg ? msg->type(): -1),
+    (state ? typeid(*state).name(): "None"));
+}
+
 //////////////////////////////////////////////////////////////////////
 // Message handler for the editor
 
@@ -1920,8 +1949,16 @@ bool Editor::onProcessMessage(Message* msg)
 
     case kMouseEnterMessage:
       m_brushPreview.hide();
-      updateToolLoopModifiersIndicators();
-      updateQuicktool();
+
+      // Do not update tool loop modifiers when the mouse exits and/re-enters
+      // the editor area while we are inside the same tool loop (hasCapture()).
+      // E.g. This avoids starting to rotate a rectangular marquee (Alt key
+      // pressed) if we have the subtract mode on (Shift+Alt) and touch the
+      // editor edge (MouseLeave/Enter)
+      if (!hasCapture()) {
+        updateToolLoopModifiersIndicators();
+        updateQuicktool();
+      }
       break;
 
     case kMouseLeaveMessage:
@@ -2238,10 +2275,10 @@ void Editor::onPaint(ui::PaintEvent& ev)
       if (Preferences::instance().perf.showRenderTime()) {
         View* view = View::getView(this);
         gfx::Rect vp = view->viewportBounds();
-        char buf[128];
-        sprintf(buf, "%c %.4gs",
-                Preferences::instance().experimental.newRenderEngine() ? 'N': 'O',
-                renderElapsed);
+        std::string buf =
+          fmt::format("{:c} {:.4g}s",
+                      Preferences::instance().experimental.newRenderEngine() ? 'N': 'O',
+                      renderElapsed);
         g->drawText(
           buf,
           gfx::rgba(255, 255, 255, 255),
@@ -2370,6 +2407,9 @@ void Editor::onBeforeRemoveLayer(DocEvent& ev)
   Layer* layerToSelect = candidate_if_layer_is_deleted(layer(), ev.layer());
   if (layer() != layerToSelect)
     setLayer(layerToSelect);
+
+  if (m_state)
+    m_state->onBeforeRemoveLayer(this);
 }
 
 void Editor::onBeforeRemoveCel(DocEvent& ev)
@@ -2562,8 +2602,8 @@ void Editor::setZoomAndCenterInMouse(const Zoom& zoom,
   // extra space for the zoom)
   gfx::Rect visibleBounds = editorToScreen(
     getViewportBounds().createIntersection(gfx::Rect(gfx::Point(0, 0), canvasSize())));
-  screenPos.x = std::clamp(screenPos.x, visibleBounds.x, visibleBounds.x2()-1);
-  screenPos.y = std::clamp(screenPos.y, visibleBounds.y, visibleBounds.y2()-1);
+  screenPos.x = std::clamp(screenPos.x, visibleBounds.x, std::max(visibleBounds.x, visibleBounds.x2()-1));
+  screenPos.y = std::clamp(screenPos.y, visibleBounds.y, std::max(visibleBounds.y, visibleBounds.y2()-1));
 
   spritePos = screenToEditor(screenPos);
 
@@ -2978,9 +3018,18 @@ void Editor::updateAutoCelGuides(ui::Message* msg)
   }
 }
 
+int Editor::otherLayersOpacity() const
+{
+  if (m_docView && m_docView->isPreview())
+    return Preferences::instance().experimental.nonactiveLayersOpacityPreview();
+  else
+    return Preferences::instance().experimental.nonactiveLayersOpacity();
+}
+
 // static
 void Editor::registerCommands()
 {
+  // TODO merge with ToggleOtherLayersOpacity
   Commands::instance()
     ->add(
       new QuickCommand(
